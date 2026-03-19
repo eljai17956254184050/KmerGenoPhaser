@@ -83,7 +83,7 @@ patchwork  ggrepel  data.table  fs  showtext
 ## Installation
 
 ```bash
-git clone https://github.com/<your-repo>/KmerGenoPhaser.git
+git clone https://github.com/GengruiZhu/KmerGenoPhaser.git
 cd KmerGenoPhaser
 conda activate <your-env>
 bash install.sh
@@ -99,6 +99,12 @@ After installation:
 ```bash
 KmerGenoPhaser --version
 KmerGenoPhaser --help
+```
+
+To verify the full installation (requires test data):
+
+```bash
+bash test_install.sh
 ```
 
 ### Fix common install failures
@@ -121,10 +127,10 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
 KmerGenoPhaser/
 ├── install.sh
+├── test_install.sh
 ├── README.md
 ├── INSTALL.md
 ├── environment.yml
-├── VERSION
 ├── bin/
 │   ├── KmerGenoPhaser                    ← main entry point (dispatcher)
 │   ├── KmerGenoPhaser_supervised.sh
@@ -132,6 +138,8 @@ KmerGenoPhaser/
 │   └── KmerGenoPhaser_snpml.sh
 ├── conf/
 │   └── kmergenophaser.conf               ← all parameter defaults
+├── test/
+│   └── data/                             ← test data for test_install.sh
 └── lib/
     ├── vis_karyotype.R                   ← karyotype visualization
     ├── supervised/
@@ -489,7 +497,7 @@ KmerGenoPhaser karyotype \
 
 ## Citation
 
-> [Paper citation placeholder]
+> Manuscript in preparation. Citation will be added upon publication.
 
 ## License
 
