@@ -31,6 +31,17 @@
 
 ---
 
+## Releases
+
+| Version | Date | Highlights |
+|---------|------|------------|
+| **[v1.1](https://github.com/GengruiZhu/KmerGenoPhaser/releases/tag/v1.1)** | 2026-03-31 | Selectable FFT encoding (`--encoding`); complex vari-code fix; auto `INPUT_DIM`; genome feature mode |
+| [v1.0](https://github.com/GengruiZhu/KmerGenoPhaser/releases/tag/v1.0) | 2025-03 | Initial public release |
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
+
+---
+
 ## Table of Contents
 
 - [Requirements](#requirements)
@@ -129,12 +140,13 @@ KmerGenoPhaser/
 ├── install.sh
 ├── test_install.sh
 ├── README.md
+├── CHANGELOG.md
 ├── INSTALL.md
 ├── environment.yml
 ├── bin/
 │   ├── KmerGenoPhaser                    ← main entry point (dispatcher)
 │   ├── KmerGenoPhaser_supervised.sh
-│   ├── KmerGenoPhaser_unsupervised.sh
+│   ├── KmerGenoPhaser_unsupervised.sh    ← v1.1: --encoding / --feature_mode added
 │   └── KmerGenoPhaser_snpml.sh
 ├── conf/
 │   └── kmergenophaser.conf               ← all parameter defaults
@@ -147,16 +159,18 @@ KmerGenoPhaser/
     │   ├── equalize_and_sample.py
     │   ├── filter_unique_kmer.py
     │   ├── map_kmers_to_genome.py
-    │   ├── mapping_counts_to_blocks.py   ← converts mapping TSV to block .txt
+    │   ├── mapping_counts_to_blocks.py
     │   └── vis_supervised.R
     ├── unsupervised/
-    │   ├── extract_block_features.py
+    │   ├── extract_block_features.py          ← v1.0 (k-mer only, kept for reference)
+    │   ├── extract_block_features_fft.py      ← v1.1 NEW: k-mer + complex FFT, selectable
+    │   ├── window_to_spectral_features.py     ← v1.0 (ASCII encoding bug, kept for reference)
+    │   ├── window_to_spectral_features_v2.py  ← v1.1 NEW: corrected complex FFT encoding
     │   ├── train_adaptive_unsupervised.py
     │   ├── check_and_fix_blocks.py
     │   ├── assign_nodata_bloodline.py
     │   ├── plot_bloodline_heatmap.py
-    │   ├── plot_heatmap_from_windows.py
-    │   └── window_to_spectral_features.py
+    │   └── plot_heatmap_from_windows.py
     └── snpml/
         ├── make_diag_sites_ref_or_alt.py
         ├── diag_dosage_curve_ref_or_alt.py
@@ -176,12 +190,20 @@ CONDA_ENV="<your-conda-env-name>"
 MINICONDA_PATH="${HOME}/miniconda3"    # or ~/anaconda3
 THREADS=20
 
-# unsupervised
+# unsupervised — feature extraction
 MIN_KMER=1;  MAX_KMER=5
-# INPUT_DIM must equal sum(4^k for k in MIN_KMER..MAX_KMER)
-# k=1..5 → 4+16+64+256+1024 = 1364
-INPUT_DIM=1364
 EPOCHS=100000;  LATENT_DIM=32
+
+# unsupervised — v1.1 encoding options
+FEATURE_MODE=block        # block | genome
+ENCODING=concat           # kmer  | fft | concat
+FFT_SIZE=1024
+GENOME_WINDOW_SIZE=10000
+# INPUT_DIM is now auto-computed at runtime from ENCODING + MIN_KMER + MAX_KMER + FFT_SIZE
+# You no longer need to edit this manually. Reference values:
+#   encoding=concat  k=1..5  fft=1024  →  2388
+#   encoding=kmer    k=1..5            →  1364  (v1.0 legacy)
+#   encoding=fft                fft=1024  →  1024
 
 # supervised
 K=21;  MIN_COUNT=50;  MIN_SCORE=0.9;  WINDOW_SIZE=100000
@@ -343,31 +365,76 @@ KmerGenoPhaser snpml \
 
 Autoencoder-based ancestry block discovery. Runs with or without upstream block files. Automatically runs `karyotype` visualization at the end (Step 5) unless `--skip_karyotype` is set.
 
+**v1.1** introduces selectable feature encoding and a fixed FFT implementation. `INPUT_DIM` is now auto-computed — you no longer need to update `conf/kmergenophaser.conf` when changing the k-mer range or FFT size.
+
 ```bash
-# With block files (recommended)
+# Block mode — k-mer + complex FFT (v1.1 default, recommended)
 KmerGenoPhaser unsupervised \
     --input_fasta   /path/to/target.fasta \
     --species_name  "MySpecies_Chr1" \
     --target_chroms "Chr1A Chr1B Chr1D" \
     --block_dir     /path/to/block_txt_dir \
-    --work_dir      /path/to/work
+    --work_dir      /path/to/work \
+    --encoding      concat \
+    --fft_size      1024
 
-# Chromosome-level mode (no block files)
+# Block mode — k-mer only (v1.0 legacy behaviour)
+KmerGenoPhaser unsupervised \
+    --input_fasta   /path/to/target.fasta \
+    --species_name  "MySpecies_Chr1" \
+    --target_chroms "Chr1A Chr1B Chr1D" \
+    --block_dir     /path/to/block_txt_dir \
+    --work_dir      /path/to/work \
+    --encoding      kmer
+
+# Chromosome-level mode (no block files, FFT only)
 KmerGenoPhaser unsupervised \
     --input_fasta   /path/to/target.fasta \
     --species_name  "MySpecies" \
     --target_chroms "Chr1 Chr2 Chr3" \
-    --work_dir      /path/to/work
+    --work_dir      /path/to/work \
+    --feature_mode  genome \
+    --encoding      fft
 ```
 
-**Key optional:**
+**Feature encoding (`--encoding`):**
+
+| Value | Description | `INPUT_DIM` (k=1..5, fft_size=1024) |
+|-------|-------------|--------------------------------------|
+| `concat` | K-mer frequency + complex FFT **[v1.1 default]** | 2388 |
+| `kmer` | K-mer frequency only (v1.0 behaviour) | 1364 |
+| `fft` | Complex FFT magnitude only | 1024 |
+
+**Feature mode (`--feature_mode`):**
+
+| Value | Extractor used | Steps enabled | Requires |
+|-------|----------------|---------------|----------|
+| `block` (default) | `extract_block_features_fft.py` | 1–5 (full pipeline) | `--block_dir` |
+| `genome` | `window_to_spectral_features_v2.py` | 1–2 only | — |
+
+**Complex encoding design (v1.1):**
+
+```
+A =  1+1j   (purine   + amino-group)
+G =  1-1j   (purine   + keto-group)
+C = -1+1j   (pyrimidine + amino-group)
+T = -1-1j   (pyrimidine + keto-group)
+```
+
+Both axes are orthogonal in the complex plane, preserving purine/pyrimidine and amino/keto distinctions independently. This replaces the v1.0 ASCII encoding (A=65, C=67, etc.) which had no biological meaning and produced artefactual FFT spectra.
+
+**Key optional arguments:**
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--block_dir` | — | Block `.txt` directory; omit for chromosome-level mode |
-| `--min_kmer` | 1 | Min k-mer size for feature extraction |
+| `--block_dir` | — | Block `.txt` directory; required for `block` feature mode |
+| `--feature_mode` | `block` | `block` or `genome` |
+| `--encoding` | `concat` | `kmer`, `fft`, or `concat` |
+| `--fft_size` | 1024 | FFT points / output spectrum dimension |
+| `--min_kmer` | 1 | Min k-mer size |
 | `--max_kmer` | 5 | Max k-mer size |
 | `--epochs` | 100000 | Training epochs |
+| `--genome_window` | 10000 | Sliding window size for `genome` mode |
 | `--skip_karyotype` | — | Skip karyotype visualization (Step 5) |
 | `--genome_title` | species_name | Title for karyotype plots |
 | `--karyotype_colors` | auto | `"Name=#hex,Name2=#hex2"` custom bloodline colors |
@@ -375,9 +442,15 @@ KmerGenoPhaser unsupervised \
 | `--skip_check_blocks` | — | Skip block-vs-FASTA length validation |
 | `--no_bloodline` | — | Skip heatmap plotting |
 
-> **`INPUT_DIM` must match k-mer range.** The feature extraction step prints the correct value at runtime. Update `INPUT_DIM` in `conf/kmergenophaser.conf` when changing `--min_kmer`/`--max_kmer`:
+> **`INPUT_DIM` is now auto-computed at runtime** from `--encoding`, `--min_kmer`, `--max_kmer`, and `--fft_size`. The value is printed at the start of the run. You no longer need to update `conf/kmergenophaser.conf` manually.
+>
+> Reference values:
 > ```
-> k=1..5  → INPUT_DIM=1364    k=1..4  → INPUT_DIM=340    k=2..5  → INPUT_DIM=1360
+> encoding=concat  k=1..5  fft_size=1024  →  INPUT_DIM=2388   (v1.1 default)
+> encoding=kmer    k=1..5                 →  INPUT_DIM=1364   (v1.0 legacy)
+> encoding=fft                fft_size=1024  →  INPUT_DIM=1024
+> encoding=kmer    k=1..4                 →  INPUT_DIM=340
+> encoding=kmer    k=2..5                 →  INPUT_DIM=1360
 > ```
 
 ---
@@ -456,15 +529,18 @@ KmerGenoPhaser snpml \
     --existing_diag_dir ${DATA}/diag_bedgraph
 # Block output: ${WORK}/snpml/output/snpml_block_txt/Target.1/
 
-# Step C: Unsupervised autoencoder
+# Step C: Unsupervised autoencoder (v1.1 — concat encoding)
 KmerGenoPhaser unsupervised \
     --input_fasta    ${DATA}/target.fasta \
     --species_name   "MySpecies_Chr1" \
     --target_chroms  "Chr1A Chr1B Chr1D" \
     --block_dir      ${WORK}/snpml/output/snpml_block_txt/Target.1 \
     --work_dir       ${WORK}/unsupervised \
+    --encoding       concat \
+    --fft_size       1024 \
     --genome_title   "MySpecies" \
     --centromere_file ${DATA}/centromeres.csv
+# INPUT_DIM is auto-computed and printed at runtime
 # Karyotype PDFs generated automatically at end (Step 5)
 
 # Step D: Re-run karyotype with custom colors
@@ -486,12 +562,14 @@ KmerGenoPhaser karyotype \
 | `libcrypto.so.1.0.0` error | `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH` |
 | `R:patchwork` / `R:ggrepel` FAIL | `Rscript -e 'install.packages(c("patchwork","ggrepel"))'` |
 | `cyvcf2` not found | `conda install -c bioconda cyvcf2` |
-| `INPUT_DIM mismatch` in training | Check printed `feature_dim`; update `INPUT_DIM` in conf |
+| `INPUT_DIM mismatch` in training | Check the `INPUT_DIM` printed at Step 1; v1.1 computes this automatically |
+| `unrecognized arguments: --encoding` | Ensure you are using the v1.1 `KmerGenoPhaser_unsupervised.sh` |
 | `No group columns matched pattern` | Check `--group_patterns` against actual AD matrix column names |
 | `No *_AD_matrix.txt files found` | Files must end with exactly `_AD_matrix.txt` |
 | bedGraph not linked in snpml | File naming must be `<Chrom>.<GroupName>.bedgraph` |
 | Karyotype shows no chromosomes | Check `--group_pattern` regex matches your chromosome names |
 | `CONDA_ENV` not found in conf | Edit `conf/kmergenophaser.conf` — set `CONDA_ENV` to your env name |
+| Old `.pkl` / `*_distances.tsv` reused | Delete cached files before re-running with new `--encoding` setting |
 
 ---
 
@@ -501,9 +579,12 @@ KmerGenoPhaser karyotype \
 
 ## License
 
-MIT
+This project is licensed under a **Non-Commercial Research License**.  
+Free to use for academic and research purposes only. Commercial use is strictly prohibited.  
+See the [LICENSE](./LICENSE) file for details.
 
 ---
+
 ## Contact
 
 - **Developers**: Gengrui Zhu, Yi Chen
