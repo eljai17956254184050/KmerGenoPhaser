@@ -309,7 +309,7 @@ process_kmc() {
       -ci${MIN_COUNT} -cs100000000 \
       ${KMC_FORMAT_FLAG} @"$LIST" "$DB" "$TMP"
 
-  kmc_tools dump "$DB" "$FA"
+  kmc_tools transform "$DB" dump "$FA"
   rm -rf "$TMP" "$LIST" "${DB}.kmc_pre" "${DB}.kmc_suf"
   echo "  [done] $SP KMC."
 }

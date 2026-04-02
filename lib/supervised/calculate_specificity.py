@@ -14,6 +14,8 @@ calculate_specificity.py
 import os
 import argparse
 import random
+from typing import List, Optional
+
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
@@ -33,7 +35,7 @@ _ENCODE_TABLE = np.array([
 ], dtype=np.float32)
 
 
-def encode_kmers_batch(kmers: list[str]) -> np.ndarray:
+def encode_kmers_batch(kmers: List[str]) -> np.ndarray:
     """
     批量编码 k-mer 列表。
     返回 shape: (n, 2k) 的 float32 数组。
@@ -51,7 +53,7 @@ def encode_kmers_batch(kmers: list[str]) -> np.ndarray:
     return _ENCODE_TABLE[idx].reshape(n, k * 2)
 
 
-def is_low_complexity_batch(kmers: list[str], k: int) -> np.ndarray:
+def is_low_complexity_batch(kmers: List[str], k: int) -> np.ndarray:
     """
     批量判断低复杂度，返回 bool 数组（True = 低复杂度，需过滤）。
     检测：单碱基重复 + 简单二核苷酸重复。
@@ -88,13 +90,13 @@ def parse_kmc_txt(fasta_file: str, k: int):
 
 
 def build_centroid(kmer_file: str, k: int, max_kmers: int = 500_000,
-                   min_count: int = 5, sample_size: int = 20_000) -> np.ndarray | None:
+                   min_count: int = 5, sample_size: int = 20_000) -> Optional[np.ndarray]:
     """
     对单个背景物种文件，采样后计算质心向量。
     改进：批量读取 → 批量编码，比原来快 30x。
     """
-    batch: list[str] = []
-    reservoir: list[np.ndarray] = []
+    batch: List[str] = []
+    reservoir: List[np.ndarray] = []
     n_read = 0
 
     for kmer, count in parse_kmc_txt(kmer_file, k):
@@ -152,7 +154,7 @@ def main():
 
     # ── Step 1: 计算背景质心 ─────────────────────────────────────────────────
     print(f"[INFO] Building background centroids for {args.species}...")
-    raw_centroids: list[np.ndarray] = []
+    raw_centroids: List[np.ndarray] = []
     for spec in args.other_species.split(","):
         f = os.path.join(args.kmer_db_dir, f"{spec}_k{K}.fa")
         if not os.path.exists(f):
@@ -172,7 +174,7 @@ def main():
     # ── Step 2: 拟合 StandardScaler（只用前 10000 行目标文件）───────────────
     target_f = os.path.join(args.kmer_db_dir, f"{args.species}_k{K}.fa")
     print(f"[INFO] Fitting scaler on {target_f} (first 10k rows)...")
-    fit_kmers: list[str] = []
+    fit_kmers: List[str] = []
     for kmer, _ in parse_kmc_txt(target_f, K):
         fit_kmers.append(kmer)
         if len(fit_kmers) >= 10_000:
@@ -193,12 +195,12 @@ def main():
     print(f"[INFO] Scoring {args.species} (chunk={CHUNK}, top_n={TOP_N})...")
 
     # 用数组而不是堆，最后一次性 argsort
-    all_scores:  list[np.ndarray] = []
-    all_kmers:   list[str]        = []
-    all_counts:  list[np.ndarray] = []
+    all_scores:  List[np.ndarray] = []
+    all_kmers:   List[str]        = []
+    all_counts:  List[np.ndarray] = []
 
-    chunk_kmers:  list[str] = []
-    chunk_counts: list[int] = []
+    chunk_kmers:  List[str] = []
+    chunk_counts: List[int] = []
     total_processed = 0
 
     def flush_chunk():
