@@ -386,13 +386,13 @@ get_top_ora_kmers() {
   local species="$2"
   local top_pct="$3"
   
-  # ora file format: FinalScore\tKmer\tCount (sorted by FinalScore descending)
   local total_lines=$(( $(wc -l < "$ora_file") - 1 ))
-  local top_n=$(echo "$total_lines * $top_pct" | bc | cut -d'.' -f1)
+  local top_n
+  top_n=$(echo "$total_lines * $top_pct" | bc | cut -d'.' -f1)
   [[ "$top_n" -lt 1 ]] && top_n=1
   
-  # Output format for merge: Kmer\tFinalScore\tSpecies
-  tail -n +2 "$ora_file" | head -n "$top_n" | awk -v sp="$species" '{print $2"\t"$1"\t"sp}'
+  # Use awk instead of tail|head to avoid SIGPIPE with set -o pipefail
+  awk -v n="$top_n" -v sp="$species" 'NR>1 && NR<=n+1 {print $2"\t"$1"\t"sp}' "$ora_file"
 }
 
 MERGED_RAW="${PROCESS_FINAL_DIR}/all_species_unique_merged_raw.txt"
@@ -430,13 +430,11 @@ for SP in "${SP_ARR[@]}"; do
   ACTUAL_SOURCE[$SP]="$USE_SOURCE"
   
   if [[ "$USE_SOURCE" == "unique" ]]; then
-    # Use unique k-mers
     awk -v sp="$SP" 'NR>1 {print $2"\t"$1"\t"sp}' "$UNIQUE_FILE" >> "$MERGED_RAW"
     echo "  $SP: using unique k-mers (n=$UNIQUE_COUNT)"
   else
-    # Use top N% of ora k-mers
     get_top_ora_kmers "$ORA_FILE" "$SP" "$ORA_TOP_PCT" >> "$MERGED_RAW"
-    local used_count=$(echo "$ORA_COUNT * $ORA_TOP_PCT" | bc | cut -d'.' -f1)
+    used_count=$(echo "$ORA_COUNT * $ORA_TOP_PCT" | bc | cut -d'.' -f1)
     echo "  $SP: using ora k-mers top ${ORA_TOP_PCT} (n≈$used_count from $ORA_COUNT total)"
   fi
 done
