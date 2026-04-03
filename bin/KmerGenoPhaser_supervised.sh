@@ -223,11 +223,22 @@ mkdir -p "$INPUT_KMER_DB_DIR" "$PROCESS_ORA_DIR" "$PROCESS_UNIQUE_DIR" \
 
 ALL_SPECIES=$(IFS=','; echo "${SP_ARR[*]}")
 
+# ── Helper: build OTHERS list (exclude current species from ALL_SPECIES) ──────
+build_others() {
+  local current="$1"
+  local others=()
+  for sp in "${SP_ARR[@]}"; do
+    [[ "$sp" != "$current" ]] && others+=("$sp")
+  done
+  local IFS=','
+  echo "${others[*]}"
+}
+
 # ── Get genome size in Mb ─────────────────────────────────────────────────────
 get_genome_size_mb() {
   local fasta="$1"
   local total_bp=0
-  
+
   # Use samtools faidx if available, otherwise use awk
   if command -v samtools &> /dev/null; then
     if [[ ! -f "${fasta}.fai" ]]; then
@@ -237,12 +248,12 @@ get_genome_size_mb() {
       total_bp=$(awk '{sum+=$2} END{print sum}' "${fasta}.fai")
     fi
   fi
-  
+
   # Fallback: parse FASTA directly
   if [[ "$total_bp" -eq 0 ]]; then
     total_bp=$(awk '/^>/{next} {sum+=length($0)} END{print sum}' "$fasta")
   fi
-  
+
   # Convert to Mb (integer)
   echo $(( total_bp / 1000000 ))
 }
@@ -325,7 +336,7 @@ echo ""
 echo ">>> Step 1: Specificity Scoring..."
 
 for SP in "${SP_ARR[@]}"; do
-  OTHERS=$(echo "$ALL_SPECIES" | sed "s/^${SP},//;s/,${SP}$//;s/,${SP},/,/")
+  OTHERS=$(build_others "$SP")
   OUT="${PROCESS_ORA_DIR}/${SP}_top_weighted_k${K}_complex.txt"
   if [[ -s "$OUT" ]]; then
     echo "  [skip] $SP score file exists."
@@ -348,7 +359,7 @@ echo ""
 echo ">>> Step 1.5: Unique Filtering..."
 
 for SP in "${SP_ARR[@]}"; do
-  OTHERS=$(echo "$ALL_SPECIES" | sed "s/^${SP},//;s/,${SP}$//;s/,${SP},/,/")
+  OTHERS=$(build_others "$SP")
   OUT="${PROCESS_UNIQUE_DIR}/${SP}_unique_k${K}_complex.txt"
   if [[ -s "$OUT" ]]; then
     echo "  [skip] $SP unique file exists."
@@ -374,7 +385,9 @@ echo ">>> Step 1.6: Merging (kmer_source=${KMER_SOURCE})..."
 count_kmers() {
   local file="$1"
   if [[ -s "$file" ]]; then
-    echo $(( $(wc -l < "$file") - 1 ))
+    local total
+    total=$(wc -l < "$file")
+    echo $(( total - 1 ))
   else
     echo 0
   fi
@@ -385,12 +398,13 @@ get_top_ora_kmers() {
   local ora_file="$1"
   local species="$2"
   local top_pct="$3"
-  
-  local total_lines=$(( $(wc -l < "$ora_file") - 1 ))
+
+  local total_lines
+  total_lines=$(( $(wc -l < "$ora_file") - 1 ))
   local top_n
   top_n=$(echo "$total_lines * $top_pct" | bc | cut -d'.' -f1)
   [[ "$top_n" -lt 1 ]] && top_n=1
-  
+
   # Use awk instead of tail|head to avoid SIGPIPE with set -o pipefail
   awk -v n="$top_n" -v sp="$species" 'NR>1 && NR<=n+1 {print $2"\t"$1"\t"sp}' "$ora_file"
 }
@@ -404,12 +418,12 @@ declare -A ACTUAL_SOURCE
 for SP in "${SP_ARR[@]}"; do
   UNIQUE_FILE="${PROCESS_UNIQUE_DIR}/${SP}_unique_k${K}_complex.txt"
   ORA_FILE="${PROCESS_ORA_DIR}/${SP}_top_weighted_k${K}_complex.txt"
-  
+
   UNIQUE_COUNT=$(count_kmers "$UNIQUE_FILE")
   ORA_COUNT=$(count_kmers "$ORA_FILE")
-  
+
   USE_SOURCE="$KMER_SOURCE"
-  
+
   # Auto-selection logic
   if [[ "$KMER_SOURCE" == "auto" ]]; then
     if [[ "$UNIQUE_COUNT" -ge "$GENOME_SIZE_MB" ]]; then
@@ -420,22 +434,27 @@ for SP in "${SP_ARR[@]}"; do
       echo "         Auto-switching to ora k-mers (top ${ORA_TOP_PCT})"
     fi
   fi
-  
+
   # Force ora if unique is empty regardless of setting
   if [[ "$USE_SOURCE" == "unique" && "$UNIQUE_COUNT" -eq 0 ]]; then
     echo "  [WARN] $SP: unique k-mer file is empty, falling back to ora"
     USE_SOURCE="ora"
   fi
-  
+
   ACTUAL_SOURCE[$SP]="$USE_SOURCE"
-  
+
   if [[ "$USE_SOURCE" == "unique" ]]; then
     awk -v sp="$SP" 'NR>1 {print $2"\t"$1"\t"sp}' "$UNIQUE_FILE" >> "$MERGED_RAW"
     echo "  $SP: using unique k-mers (n=$UNIQUE_COUNT)"
   else
-    get_top_ora_kmers "$ORA_FILE" "$SP" "$ORA_TOP_PCT" >> "$MERGED_RAW"
-    used_count=$(echo "$ORA_COUNT * $ORA_TOP_PCT" | bc | cut -d'.' -f1)
-    echo "  $SP: using ora k-mers top ${ORA_TOP_PCT} (n≈$used_count from $ORA_COUNT total)"
+    # [FIX] Also check that ora file is non-empty before extracting
+    if [[ "$ORA_COUNT" -eq 0 ]]; then
+      echo "  [WARN] $SP: ora k-mer file is also empty! No k-mers available."
+    else
+      get_top_ora_kmers "$ORA_FILE" "$SP" "$ORA_TOP_PCT" >> "$MERGED_RAW"
+      used_count=$(echo "$ORA_COUNT * $ORA_TOP_PCT" | bc | cut -d'.' -f1)
+      echo "  $SP: using ora k-mers top ${ORA_TOP_PCT} (n≈$used_count from $ORA_COUNT total)"
+    fi
   fi
 done
 
@@ -449,6 +468,21 @@ done
 MERGED_COUNT=$(( $(wc -l < "$MERGED_RAW") - 1 ))
 echo "  [done] Merged total: $MERGED_COUNT k-mers"
 
+# [FIX] Validate merged file has data rows before proceeding
+if [[ "$MERGED_COUNT" -le 0 ]]; then
+  echo ""
+  echo "[ERROR] Merged k-mer file is empty (0 data rows)."
+  echo "        Possible causes:"
+  echo "          1) KMC (Step 0) found no k-mers — check --min_count ($MIN_COUNT),"
+  echo "             it may be too high for your data."
+  echo "          2) Specificity scoring (Step 1) produced empty output — check"
+  echo "             input FASTA/FASTQ files in --read_dirs."
+  echo "          3) Unique filtering (Step 1.5) removed all k-mers — try"
+  echo "             --kmer_source ora to skip unique filtering."
+  echo "        Merged file: $MERGED_RAW"
+  exit 1
+fi
+
 # ============================================================================
 # Step 2: Gradient equalization
 # ============================================================================
@@ -460,6 +494,28 @@ python "${SCRIPT_PY_DIR}/equalize_and_sample.py" \
   --output_file "$FINAL_BALANCED" \
   --min_score   "$MIN_SCORE" \
   --bin_size    1.0
+
+# [FIX] Validate equalized output file exists and has data
+if [[ ! -s "$FINAL_BALANCED" ]]; then
+  echo ""
+  echo "[ERROR] Equalized k-mer file was not created or is empty."
+  echo "        File: $FINAL_BALANCED"
+  echo "        Possible causes:"
+  echo "          1) All k-mers were filtered by --min_score ($MIN_SCORE)."
+  echo "             Try lowering it, e.g. --min_score 0.8 or --min_score 0.7"
+  echo "          2) The merged input had too few k-mers ($MERGED_COUNT total)."
+  echo "             Check Step 1.6 output: $MERGED_RAW"
+  exit 1
+fi
+
+BALANCED_COUNT=$(( $(wc -l < "$FINAL_BALANCED") - 1 ))
+echo "  [done] Equalized k-mers: $BALANCED_COUNT"
+
+if [[ "$BALANCED_COUNT" -le 0 ]]; then
+  echo "[ERROR] Equalized file has header but 0 data rows."
+  echo "        Try lowering --min_score (current: $MIN_SCORE)"
+  exit 1
+fi
 
 # ============================================================================
 # Step 3: Mapping to genome
@@ -516,10 +572,12 @@ if [[ "$SKIP_VIS" -eq 0 ]]; then
   )
   [[ -n "$BLOCK_FILE" ]] && VIS_ARGS+=("--block_file" "$BLOCK_FILE")
 
-  Rscript "${LIB_DIR}/supervised/vis_supervised.R" "${VIS_ARGS[@]}"
-
-  [[ $? -eq 0 ]] && echo "  [done] Plots: $VIS_OUT" \
-                 || echo "  [WARN] Visualization failed — check R output."
+  # [FIX] Proper error handling for Rscript under set -e
+  if Rscript "${LIB_DIR}/supervised/vis_supervised.R" "${VIS_ARGS[@]}"; then
+    echo "  [done] Plots: $VIS_OUT"
+  else
+    echo "  [WARN] Visualization failed — check R output."
+  fi
 else
   echo "[Step 4] Skipped (--skip_vis)."
 fi
